@@ -21,7 +21,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['ended', 'progress', 'ready'])
+const emit = defineEmits(['ended', 'progress', 'ready', 'play'])
 
 const playerRef = ref(null)
 const videoRef = ref(null)
@@ -206,6 +206,11 @@ const handleEnded = () => {
   emit('ended')
 }
 
+const handlePlay = () => {
+  isPlaying.value = true
+  emit('play')
+}
+
 const handleFullscreenChange = () => {
   isFullscreen.value = Boolean(document.fullscreenElement)
 }
@@ -247,7 +252,7 @@ onBeforeUnmount(() => {
       @canplay="isLoading = false"
       @waiting="isLoading = true"
       @playing="isLoading = false; isPlaying = true"
-      @play="isPlaying = true"
+      @play="handlePlay"
       @pause="isPlaying = false"
       @timeupdate="handleTimeUpdate"
       @ended="handleEnded"

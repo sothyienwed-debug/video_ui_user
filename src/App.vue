@@ -45,6 +45,7 @@ const showSessionPopup = ref(false)
 const showEpisodePopup = ref(false)
 const pendingEpisode = ref(null)
 const episodeChangeCount = ref(Number(sessionStorage.getItem(EPISODE_CHANGE_KEY) || 0))
+const playbackPopupVideoId = ref('')
 const stats = ref({
   likes: 0,
   dislikes: 0,
@@ -73,12 +74,21 @@ const posterUrl = computed(() => getThumbnailUrl(video.value))
 const sourceUrl = computed(() => getVideoSourceUrl(video.value))
 const currentCategory = computed(() => categoryName(video.value))
 const createdDate = computed(() => formatDate(video.value?.created_at || video.value?.published_at))
-const primaryAdUrl = computed(() => video.value?.ad_link || video.value?.ads?.[0]?.url || '')
+const primaryAdUrl = computed(() => video.value?.popup_ads_url || video.value?.ad_link || video.value?.ads?.[0]?.url || '')
 const totalEpisodes = computed(() => episodes.value.length)
 const visibleComments = computed(() => allComments.value.slice(0, commentsPage.value * COMMENTS_PER_PAGE))
 const commentsHasMore = computed(() => visibleComments.value.length < allComments.value.length)
 
 const normalizeText = (value) => String(value || '').trim().toLowerCase()
+
+const isHttpUrl = (value) => {
+  try {
+    const url = new URL(value)
+    return ['http:', 'https:'].includes(url.protocol)
+  } catch {
+    return false
+  }
+}
 
 const videoTimestamp = (item) => {
   const date = new Date(item?.published_at || item?.created_at || 0)
@@ -96,6 +106,8 @@ const uniqueById = (items) => {
     return true
   })
 }
+
+const publishedOnly = (items) => items.filter((item) => item?.status === 'published')
 
 const categoryKey = (category) => {
   if (!category) return ''
@@ -358,7 +370,7 @@ const loadCatalog = async () => {
   relatedLoading.value = true
 
   const [videoResult, homeResult, categoryResult] = await Promise.allSettled([
-    api.getAllVideos({ per_page: 100 }),
+    api.getAllVideos({ status: 'published', per_page: 100 }),
     api.getHome(),
     api.getCategories({ status: 'active' }),
   ])
@@ -371,10 +383,10 @@ const loadCatalog = async () => {
   ]
 
   if (videoResult.status === 'fulfilled' || homeVideoLists.length) {
-    videos.value = uniqueById([
+    videos.value = publishedOnly(uniqueById([
       ...homeVideoLists,
       ...(videoResult.status === 'fulfilled' ? videoResult.value : []),
-    ])
+    ]))
   }
 
   if (categoryResult.status === 'fulfilled' && categoryResult.value?.length) {
@@ -408,13 +420,17 @@ const loadCurrentVideo = async (id) => {
 
   try {
     const payload = await api.getVideo(fallbackId)
+
+    if (payload?.status !== 'published') {
+      throw new Error('Video is not published.')
+    }
+
     video.value = payload
     selectedVideoId.value = payload.id
     currentView.value = 'watch'
     syncStats(payload)
     resetComments()
     progressVersion.value += 1
-    maybeShowSessionPopup()
 
     api.recordView(payload.id)
       .then(() => {
@@ -506,13 +522,16 @@ const requestEpisodeChange = (episode) => {
   episodeChangeCount.value += 1
   sessionStorage.setItem(EPISODE_CHANGE_KEY, String(episodeChangeCount.value))
 
-  if (episodeChangeCount.value % 3 === 0) {
-    pendingEpisode.value = episode
-    showEpisodePopup.value = true
-    return
-  }
-
   commitEpisodeChange(episode)
+}
+
+const openPlaybackPopup = () => {
+  const adUrl = primaryAdUrl.value
+
+  if (!currentVideoId.value || playbackPopupVideoId.value === currentVideoId.value || !isHttpUrl(adUrl)) return
+
+  window.open(adUrl, '_blank', 'noopener,noreferrer')
+  playbackPopupVideoId.value = currentVideoId.value
 }
 
 const continuePendingEpisode = () => {
@@ -851,6 +870,7 @@ onBeforeUnmount(() => {
               :src="sourceUrl"
               :poster="posterUrl"
               :title="video?.title"
+              @play="openPlaybackPopup"
               @progress="handleProgressUpdate"
             />
           </div>
